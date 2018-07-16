@@ -105,8 +105,7 @@ alias agu='apt-get update'
 alias agr='apt-get remove'
 alias ctm='cd /data/data/com.termux/files/home/storage/shared/termux'
 
-export WORKON_HOME=~/myfolder/envs
-export VIRTUALENVWRAPPER_PYTHON=/data/data/com.termux/files/usr/bin/python3
-source /data/data/com.termux/files/usr/bin/virtualenvwrapper.sh
-
-export PATH=$PATH:~/ctags/bin
+# python virtualenv settings
+# export WORKON_HOME=~/myfolder/envs
+# export VIRTUALENVWRAPPER_PYTHON=/data/data/com.termux/files/usr/bin/python3
+# source /data/data/com.termux/files/usr/bin/virtualenvwrapper.sh
