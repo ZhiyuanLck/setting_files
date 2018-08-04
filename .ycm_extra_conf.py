@@ -31,7 +31,12 @@
 from distutils.sysconfig import get_python_inc
 import platform
 import os
+import subprocess
 import ycm_core
+
+DIR_OF_THIS_SCRIPT = os.path.abspath( os.path.dirname( __file__ ) )
+DIR_OF_THIRD_PARTY = os.path.join( DIR_OF_THIS_SCRIPT, 'third_party' )
+SOURCE_EXTENSIONS = [ '.cpp', '.cxx', '.cc', '.c', '.m', '.mm' ]
 
 # These are the compilation flags that will be used in case there's no
 # compilation database set (by default, one is not set).
@@ -52,17 +57,43 @@ flags = [
 # use when compiling headers. So it will guess. Badly. So C++ headers will be
 # compiled as C headers. You don't want that so ALWAYS specify the '-x' flag.
 # For a C project, you would set this to 'c' instead of 'c++'.
-'-std=c++14',
+'-stdlib=libc++',
 '-x',
 'c++',
 '-isystem',
-'../usr/include/c++/v1',
+'/usr/include/c++/5',
 '-isystem',
-'../usr/include',
+'/usr/include/c++/5.4.0',
 '-isystem',
-'../usr/lib/clang/6.0.1/include',
+'/usr/include/x86_64-linux-gnu/c++/5',
+'-isystem',
+'/usr/include/x86_64-linux-gnu/c++/5.4.0',
+'-isystem',
+'/usr/include',
+'-isystem',
+'cpp/pybind11',
+'-isystem',
+'cpp/BoostParts',
 '-isystem',
 get_python_inc(),
+'-isystem',
+'cpp/llvm/include',
+'-isystem',
+'cpp/llvm/tools/clang/include',
+'-I',
+'cpp/ycm',
+'-I',
+'cpp/ycm/ClangCompleter',
+'-isystem',
+'cpp/ycm/tests/gmock/gtest',
+'-isystem',
+'cpp/ycm/tests/gmock/gtest/include',
+'-isystem',
+'cpp/ycm/tests/gmock',
+'-isystem',
+'cpp/ycm/tests/gmock/include',
+'-isystem',
+'cpp/ycm/benchmarks/benchmark/include',
 ]
 
 # Clang automatically sets the '-std=' flag to 'c++14' for MSVC 2015 or later,
@@ -89,11 +120,6 @@ if os.path.exists( compilation_database_folder ):
 else:
   database = None
 
-SOURCE_EXTENSIONS = [ '.cpp', '.cxx', '.cc', '.c', '.m', '.mm' ]
-
-def DirectoryOfThisScript():
-  return os.path.dirname( os.path.abspath( __file__ ) )
-
 
 def IsHeaderFile( filename ):
   extension = os.path.splitext( filename )[ 1 ]
@@ -110,35 +136,67 @@ def FindCorrespondingSourceFile( filename ):
   return filename
 
 
-def FlagsForFile( filename, **kwargs ):
-  # If the file is a header, try to find the corresponding source file and
-  # retrieve its flags from the compilation database if using one. This is
-  # necessary since compilation databases don't have entries for header files.
-  # In addition, use this source file as the translation unit. This makes it
-  # possible to jump from a declaration in the header file to its definition in
-  # the corresponding source file.
-  filename = FindCorrespondingSourceFile( filename )
+def Settings( **kwargs ):
+  if kwargs[ 'language' ] == 'cfamily':
+    # If the file is a header, try to find the corresponding source file and
+    # retrieve its flags from the compilation database if using one. This is
+    # necessary since compilation databases don't have entries for header files.
+    # In addition, use this source file as the translation unit. This makes it
+    # possible to jump from a declaration in the header file to its definition
+    # in the corresponding source file.
+    filename = FindCorrespondingSourceFile( kwargs[ 'filename' ] )
 
-  if not database:
+    if not database:
+      return {
+        'flags': flags,
+        'include_paths_relative_to_dir': DIR_OF_THIS_SCRIPT,
+        'override_filename': filename
+      }
+
+    compilation_info = database.GetCompilationInfoForFile( filename )
+    if not compilation_info.compiler_flags_:
+      return {}
+
+    # Bear in mind that compilation_info.compiler_flags_ does NOT return a
+    # python list, but a "list-like" StringVec object.
+    final_flags = list( compilation_info.compiler_flags_ )
+
+    # NOTE: This is just for YouCompleteMe; it's highly likely that your project
+    # does NOT need to remove the stdlib flag. DO NOT USE THIS IN YOUR
+    # ycm_extra_conf IF YOU'RE NOT 100% SURE YOU NEED IT.
+
     return {
-      'flags': flags,
-      'include_paths_relative_to_dir': DirectoryOfThisScript(),
+      'flags': final_flags,
+      'include_paths_relative_to_dir': compilation_info.compiler_working_dir_,
       'override_filename': filename
     }
+  return {}
 
-  compilation_info = database.GetCompilationInfoForFile( filename )
-  if not compilation_info.compiler_flags_:
-    return None
 
-  # Bear in mind that compilation_info.compiler_flags_ does NOT return a
-  # python list, but a "list-like" StringVec object.
-  final_flags = list( compilation_info.compiler_flags_ )
+def GetStandardLibraryIndexInSysPath( sys_path ):
+  for path in sys_path:
+    if os.path.isfile( os.path.join( path, 'os.py' ) ):
+      return sys_path.index( path )
+  raise RuntimeError( 'Could not find standard library path in Python path.' )
 
-  # NOTE: This is just for YouCompleteMe; it's highly likely that your project
-  # does NOT need to remove the stdlib flag. DO NOT USE THIS IN YOUR
-  # ycm_extra_conf IF YOU'RE NOT 100% SURE YOU NEED IT.
-  return {
-    'flags': final_flags,
-    'include_paths_relative_to_dir': compilation_info.compiler_working_dir_,
-    'override_filename': filename
-  }
+
+def PythonSysPath( **kwargs ):
+  sys_path = kwargs[ 'sys_path' ]
+  for folder in os.listdir( DIR_OF_THIRD_PARTY ):
+    if folder == 'python-future':
+      folder = os.path.join( folder, 'src' )
+      sys_path.insert( GetStandardLibraryIndexInSysPath( sys_path ) + 1,
+                       os.path.realpath( os.path.join( DIR_OF_THIRD_PARTY,
+                                                       folder ) ) )
+      continue
+
+    if folder == 'cregex':
+      interpreter_path = kwargs[ 'interpreter_path' ]
+      major_version = subprocess.check_output( [
+        interpreter_path, '-c', 'import sys; print( sys.version_info[ 0 ] )' ]
+      ).rstrip().decode( 'utf8' )
+      folder = os.path.join( folder, 'regex_{}'.format( major_version ) )
+
+    sys_path.insert( 0, os.path.realpath( os.path.join( DIR_OF_THIRD_PARTY,
+                                                        folder ) ) )
+  return sys_path
